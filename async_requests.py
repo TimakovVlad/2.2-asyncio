@@ -5,16 +5,41 @@ from more_itertools import chunked
 
 from models import Session, SwapiPeople, init_orm
 
-MAX_REQUEST = 10
+MAX_REQUEST = 15
 
+async def fetch_data(url, http_session, field_name):
+    response = await http_session.get(url)
+    if response.status == 200:
+        json_data = await response.json()
+        return json_data.get(field_name)
+    return None
 
 async def get_people(person_id, http_session):
 
     response = await http_session.get(f"https://swapi.py4e.com/api/people/{person_id}/")
     json_data = await response.json()
     if json_data.get("detail") == "Not found":
-            print(f"Данные для {person_id} не найдены. Пропускаем.")
+            print(f"Данные для {person_id} не найдены")
             return None
+
+    tasks = {
+        "homeworld": fetch_data(json_data.get("homeworld"), http_session, "name") if json_data.get(
+            "homeworld") else None,
+        "films": asyncio.gather(*(fetch_data(url, http_session, "title") for url in json_data.get("films", []))),
+        "species": asyncio.gather(*(fetch_data(url, http_session, "name") for url in json_data.get("species", []))),
+        "starships": asyncio.gather(*(fetch_data(url, http_session, "name") for url in json_data.get("starships", []))),
+        "vehicles": asyncio.gather(*(fetch_data(url, http_session, "name") for url in json_data.get("vehicles", []))),
+    }
+    results = await asyncio.gather(*tasks.values())
+
+    json_data.update({
+        "homeworld": results[0],
+        "films": results[1],
+        "species": results[2],
+        "starships": results[3],
+        "vehicles": results[4],
+    })
+
     return json_data
 
 
